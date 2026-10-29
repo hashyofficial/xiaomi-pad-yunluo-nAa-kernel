@@ -62,6 +62,46 @@ jobs:
           fi
           grep -E '^(CONFIG_(MODVERSIONS|CFI_CLANG|LTO_CLANG_FULL|KASAN_HW_TAGS|ANDROID_VENDOR_HOOKS))=' out/.config \
             | tee report/security-options.txt
+      - name: Provision extra memory for stock full-LTO linking
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Full LTO is mandatory for stock-like MIUI configuration. No LTO/CFI downgrade.'
+          echo 'System resources before configuring disk-backed swap:'
+          free -h
+          df -h /mnt /
+          swapon --show || true
+          # Linux full LTO links all kernel bitcode at once. The previous run
+          # finished the individual object builds then stopped at "LTO vmlinux.o".
+          # Extra swap is a best-effort memory pressure mitigation; not a claim
+          # that the previous external runner shutdown was definitely an OOM.
+          disk_kib="$(df -Pk /mnt | awk 'NR==2 {print $4}')"
+          if [ "$disk_kib" -ge 12582912 ]; then
+            size_gib=8
+          elif [ "$disk_kib" -ge 7340032 ]; then
+            size_gib=4
+          else
+            echo "::warning::Only $disk_kib KiB free on /mnt; unable to allocate safe swap headroom"
+            size_gib=0
+          fi
+          if [ "$size_gib" -gt 0 ]; then
+            if sudo fallocate -l "${size_gib}G" /mnt/yunluo-lto.swap; then
+              sudo chmod 600 /mnt/yunluo-lto.swap
+              sudo mkswap /mnt/yunluo-lto.swap >/dev/null
+              if sudo swapon /mnt/yunluo-lto.swap; then
+                echo "PASS: enabled ${size_gib} GiB swap for memory-intensive vmlinux full LTO"
+                sudo sysctl -w vm.swappiness=80 || true
+              else
+                echo "::warning::Runner policy prevented swapon; kernel build remains memory-constrained"
+                sudo rm -f /mnt/yunluo-lto.swap
+              fi
+            else
+              echo "::warning::Unable to create runner swap file"
+            fi
+          fi
+          free -h
+          swapon --show || true
+
       - name: Link the actual kernel (never publish vmlinux or Image)
         shell: bash
         run: |
@@ -77,11 +117,25 @@ jobs:
           } | tee report/runner-resources.txt
           # Stream diagnostics to GitHub Actions as well as a small local report:
           # hidden output caused the previous runner shutdown to lose all compile evidence.
+          # Capture link-stage memory / swap usage without losing the live build log.
+          (
+            while :; do
+              date -u '+%Y-%m-%dT%H:%M:%SZ'
+              free -m | head -3
+              swapon --show --noheadings || true
+              sleep 45
+            done
+          ) > report/memory-telemetry.log 2>&1 &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
           set +e
           make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j4 vmlinux \
             2>&1 | tee report/full-kernel-build.log
           build_rc=${PIPESTATUS[0]}
           set -e
+          kill "$monitor_pid" 2>/dev/null || true
+          trap - EXIT
+          tail -24 report/memory-telemetry.log
           if [ "$build_rc" -ne 0 ]; then
             echo "BLOCKED: full 5.10.101 kernel build exited $build_rc." | tee -a report/STATUS.txt
             tail -100 report/full-kernel-build.log
