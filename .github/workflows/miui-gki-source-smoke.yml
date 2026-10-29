@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out report
-          make O="$PWD/out" ARCH=arm64 LLVM=1 gki_defconfig 2>&1 | tee report/kconfig.log
+          make O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig 2>&1 | tee report/kconfig.log
           grep -E '(CONFIG_(MODVERSIONS|CFI_CLANG|ANDROID_VENDOR_HOOKS|LTO_CLANG|ARCH_MEDIATEK))' out/.config > report/critical-config.txt || true
           cat report/critical-config.txt
           for flag in CONFIG_MODVERSIONS CONFIG_CFI_CLANG CONFIG_ANDROID_VENDOR_HOOKS CONFIG_LTO_CLANG_FULL; do
@@ -52,13 +52,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          make O="$PWD/out" ARCH=arm64 LLVM=1 -j2 prepare 2>&1 | tee report/prepare.log
+          make O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 -j2 prepare 2>&1 | tee report/prepare.log
 
       - name: Compile directly modified kernel source objects
         shell: bash
         run: |
           set -o pipefail
-          make O="$PWD/out" ARCH=arm64 LLVM=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o 2>&1 | tee report/patched-objects.log
+          make O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o 2>&1 | tee report/patched-objects.log
 
       - name: Preserve build diagnostics only — never a boot image
         if: always()
