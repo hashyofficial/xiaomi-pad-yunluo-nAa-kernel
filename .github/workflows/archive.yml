@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-    upload:
+  upload:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Target Repository
@@ -22,12 +22,12 @@ jobs:
           FILE_SIZE=$(du -m archive.7z | cut -f1)
           echo "Downloaded file size: ${FILE_SIZE} MB"
 
-      - name: Handle Large Files with Git LFS (if over 100MB)
+      - name: Handle Large Files with Git LFS
         run: |
           sudo apt-get install -y git-lfs
           git lfs install
           
-          # Track 7z files with LFS just in case it exceeds GitHub's 100MB hard limit
+          # Track 7z files with LFS to bypass GitHub's 100MB limit
           git lfs track "*.7z"
           git add .gitattributes
 
