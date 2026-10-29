@@ -11,6 +11,9 @@ on:
       - 'net/vmw_vsock/af_vsock.c'
       - 'net/sched/sch_fifo.c'
       - 'drivers/media/usb/uvc/uvc_driver.c'
+      - 'kernel/printk/printk.c'
+      - 'net/netfilter/ipvs/ip_vs_ctl.c'
+      - 'net/batman-adv/network-coding.c'
       - '.github/workflows/miui-gki-source-smoke.yml'
 
 permissions:
@@ -104,7 +107,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o net/sched/sch_fifo.o drivers/media/usb/uvc/uvc_driver.o 2>&1 | tee report/patched-objects.log
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o net/sched/sch_fifo.o drivers/media/usb/uvc/uvc_driver.o kernel/printk/printk.o net/netfilter/ipvs/ip_vs_ctl.o net/batman-adv/network-coding.o 2>&1 | tee report/patched-objects.log
 
       - name: Preserve build diagnostics only — never a boot image
         if: always()

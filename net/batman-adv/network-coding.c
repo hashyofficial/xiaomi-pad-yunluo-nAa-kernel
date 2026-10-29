@@ -1694,7 +1694,13 @@ batadv_nc_skb_decode_packet(struct batadv_priv *bat_priv, struct sk_buff *skb,
 
 	coding_len = ntohs(coded_packet_tmp.coded_len);
 
-	if (coding_len > skb->len)
+	/* The XOR operation reads the payload of both skb buffers after
+	 * their protocol headers. Validate each complete buffer length.
+	 */
+	if (coding_len + h_size > skb->len)
+		return NULL;
+
+	if (coding_len + h_size > nc_packet->skb->len)
 		return NULL;
 
 	/* Here the magic is reversed:

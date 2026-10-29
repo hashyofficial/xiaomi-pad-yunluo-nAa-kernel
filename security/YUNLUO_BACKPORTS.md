@@ -51,6 +51,27 @@ This repository contains Xiaomi's publicly released Linux **5.10.101** kernel so
 - **Change:** Reject a format descriptor shorter than four bytes before accessing `buffer[2]` or `buffer[3]`.
 - **Validation:** Static check and AArch64 Clang 12.0.5 object compilation passed (Actions 40907122827). No CVE/ASB level certified.
 
+### Backport 006 — unsigned printk maximum log buffer length
+
+- **Upstream:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/dfb7b179741ee09506dc7719d92f9e1cea01f10e
+- **File:** `kernel/printk/printk.c`.
+- **Change:** Cast the integer **before** shifting into bit 31 to avoid signed integer overflow/undefined behavior: `((u32)1 << 31)`. Keep Xiaomi's MediaTek printk diagnostics untouched.
+- **Validation:** static source check and kernel object build using stock-matching Android Clang 12; no new ASB claim.
+
+### Backport 007 — IPVS service-list sizes use size_t
+
+- **Upstream:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/4c384a66084e7a99df526d0292ab0743f0d46038
+- **File:** `net/netfilter/ipvs/ip_vs_ctl.c`.
+- **Change:** Use `size_t` rather than signed `int` for `struct_size()` results for service and destination listings; fix matching `printk` format strings.
+- **Validation:** static source check and kernel object build; no KMI or device-wide compatibility claim.
+
+### Backport 008 — BATMAN-adv network-coded packet buffer bounds
+
+- **Upstream:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/1e36c6c8dc8023b4bbe9a16e819f9998b9b6a183
+- **File:** `net/batman-adv/network-coding.c`.
+- **Change:** Before XOR decoding, verify the coded payload plus protocol-header length fits **both** source and destination packet buffers.
+- **Validation:** static check and kernel object build; note BATMAN-adv is an optional mesh-network subsystem, not evidence about the MediaTek Wi-Fi driver.
+
 ## Reviewed but deliberately NOT applied
 
 - **MediaTek CQDMA:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/dab666be25dae4c9c5d0746a018e78b2c0d53e24 — the latest source's physical-channel locking model is different from the code in Xiaomi 5.10.101. The patch does not apply directly; examine prerequisites before adapting it.

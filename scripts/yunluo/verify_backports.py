@@ -57,6 +57,34 @@ if "return -EINVAL;" not in uvc_body:
     raise SystemExit("FAIL: UVC short format descriptor must return -EINVAL")
 print("PASS: UVC format descriptor minimum length guard")
 
+# Core printk signed-overflow hardening (upstream dfb7b179741e).
+printk = Path("kernel/printk/printk.c").read_text(encoding="utf-8")
+if printk.count("#define LOG_BUF_LEN_MAX ((u32)1 << 31)") != 1:
+    raise SystemExit("FAIL: printk LOG_BUF_LEN_MAX unsigned left-shift missing")
+print("PASS: printk LOG_BUF_LEN_MAX uses unsigned left-shift")
+
+# IPVS allocation-size arithmetic must not wrap a signed int.
+ipvs = Path("net/netfilter/ipvs/ip_vs_ctl.c").read_text(encoding="utf-8")
+for label in ("services", "dests"):
+    match = f"get = (struct ip_vs_get_{label} *)arg;"
+    index = ipvs.index(match)
+    if "size_t size;" not in ipvs[index-50:index]:
+        raise SystemExit(f"FAIL: IPVS {label} size calculation still uses int")
+if ipvs.count('pr_err("length: %u != %zu') != 2:
+    raise SystemExit("FAIL: IPVS size_t printf format missing")
+print("PASS: IPVS service and destination sizes use size_t")
+
+# BATMAN-adv XOR must validate both payload buffers + protocol headers.
+batman = Path("net/batman-adv/network-coding.c").read_text(encoding="utf-8")
+start = batman.index("coding_len = ntohs(coded_packet_tmp.coded_len);")
+end = batman.index("batadv_nc_memxor(", start)
+body = batman[start:end]
+for check in ("coding_len + h_size > skb->len",
+              "coding_len + h_size > nc_packet->skb->len"):
+    if body.count(check) != 1:
+        raise SystemExit(f"FAIL: BATMAN-adv payload guard missing: {check}")
+print("PASS: BATMAN-adv both XOR source and destination length checked")
+
 makefile = Path("Makefile").read_text(encoding="utf-8")
 parts = []
 for field in ("VERSION", "PATCHLEVEL", "SUBLEVEL"):
