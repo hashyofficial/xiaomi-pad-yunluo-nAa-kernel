@@ -35,19 +35,27 @@ if "port <= LAST_RESERVED_PORT)" not in vsock:
 print("PASS: vsock autobind checks wildcard and reserved port range")
 
 fifo = Path("net/sched/sch_fifo.c").read_text(encoding="utf-8")
-fifo_expected = "if (unlikely(sch->limit == 0))\\n\\t\\treturn qdisc_drop(skb, sch, to_free);"
-if fifo_expected.replace("\\\\n", "\\n").replace("\\\\t", "\\t") not in fifo:
-    raise SystemExit("FAIL: pfifo_tail limit zero must drop without dereference")
+fifo_start = fifo.index("static int pfifo_tail_enqueue(")
+fifo_end = fifo.index("static void fifo_offload_init", fifo_start)
+fifo_body = fifo[fifo_start:fifo_end]
+if fifo_body.count("if (unlikely(sch->limit == 0))") != 1:
+    raise SystemExit("FAIL: pfifo_tail zero-limit guard missing")
+if fifo_body.index("if (unlikely(sch->limit == 0))") > fifo_body.index("if (likely(sch->q.qlen < sch->limit))"):
+    raise SystemExit("FAIL: pfifo_tail guard must precede queue access")
+if "return qdisc_drop(skb, sch, to_free);" not in fifo_body:
+    raise SystemExit("FAIL: pfifo_tail zero-limit guard must drop")
 print("PASS: pfifo_tail zero-limit drop guard")
 
 uvc = Path("drivers/media/usb/uvc/uvc_driver.c").read_text(encoding="utf-8")
-start = uvc.index("static int uvc_parse_format(")
-body = uvc[start:uvc.index("switch (buffer[2])", start)]
-if body.count("if (buflen < 4)\\n\\t\\treturn -EINVAL;".replace("\\\\n", "\\n").replace("\\\\t", "\\t")) != 1:
-    raise SystemExit("FAIL: UVC descriptor min length validation absent")
-if body.index("if (buflen < 4)") > body.index("format->type = buffer[2]"):
-    raise SystemExit("FAIL: UVC bounds check must be before buffer[2] access")
-print("PASS: UVC format descriptor length checked before access")
+uvc_start = uvc.index("static int uvc_parse_format(")
+uvc_body = uvc[uvc_start:uvc.index("switch (buffer[2])", uvc_start)]
+if uvc_body.count("if (buflen < 4)") != 1:
+    raise SystemExit("FAIL: UVC descriptor minimum length guard missing")
+if uvc_body.index("if (buflen < 4)") > uvc_body.index("format->type = buffer[2]"):
+    raise SystemExit("FAIL: UVC bounds check must precede buffer[2] access")
+if "return -EINVAL;" not in uvc_body:
+    raise SystemExit("FAIL: UVC short format descriptor must return -EINVAL")
+print("PASS: UVC format descriptor minimum length guard")
 
 makefile = Path("Makefile").read_text(encoding="utf-8")
 parts = []
