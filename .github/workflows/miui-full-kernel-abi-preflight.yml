@@ -13,7 +13,7 @@ permissions:
 jobs:
   full-kernel-abi:
     runs-on: ubuntu-24.04
-    timeout-minutes: 110
+    timeout-minutes: 100
     env:
       LLVM: '1'
       LLVM_IAS: '1'
@@ -66,14 +66,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo 'Starting full kernel link as a 5.10.101 diagnostic baseline.'
-          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 vmlinux \
-            > report/full-kernel-build.log 2>&1 || {
-              tail -100 report/full-kernel-build.log
-              echo 'BLOCKED: full 5.10.101 kernel build failed.' | tee -a report/STATUS.txt
-              exit 1
-            }
-          test -s out/Module.symvers
+          {
+            echo 'Previous GitHub-hosted runner was shut down externally (exit 143), without any build diagnostics.'
+            echo 'Rerunning with live compiler output and a limited, CPU-aware parallel build.'
+            echo "Active runner processors: $(nproc)"
+            echo "Parallel make jobs: 4"
+            free -h
+            df -h .
+            echo 'Build source: Linux 5.10.101 (not the stock 5.10.168 kernel).'
+          } | tee report/runner-resources.txt
+          # Stream diagnostics to GitHub Actions as well as a small local report:
+          # hidden output caused the previous runner shutdown to lose all compile evidence.
+          set +e
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j4 vmlinux \
+            2>&1 | tee report/full-kernel-build.log
+          build_rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$build_rc" -ne 0 ]; then
+            echo "BLOCKED: full 5.10.101 kernel build exited $build_rc." | tee -a report/STATUS.txt
+            tail -100 report/full-kernel-build.log
+            exit "$build_rc"
+          fi
+          test -s out/vmlinux || { echo "::error::vmlinux was not linked"; exit 1; }
+          test -s out/Module.symvers || { echo "::error::Module.symvers was not generated"; exit 1; }
           sha256sum out/Module.symvers > report/Module.symvers.sha256
           wc -l out/Module.symvers | tee report/exported-symbols-count.txt
           cp out/Module.symvers report/Module.symvers
