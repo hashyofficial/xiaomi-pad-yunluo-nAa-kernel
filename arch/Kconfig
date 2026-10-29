@@ -645,8 +645,10 @@ config HAS_LTO_CLANG
 	depends on CC_IS_CLANG && CLANG_VERSION >= 110000 && LD_IS_LLD
 	depends on $(success,test $(LLVM) -eq 1)
 	depends on $(success,test $(LLVM_IAS) -eq 1)
-	depends on $(success,$(NM) --help | head -n 1 | grep -qi llvm)
-	depends on $(success,$(AR) --help | head -n 1 | grep -qi llvm)
+	# Inspect tool identity, not the first line of --help (LLVM >= 18 starts
+	# its help output with a blank line).
+	depends on $(success,$(NM) --version | grep -qi llvm)
+	depends on $(success,$(AR) --version | grep -qi llvm)
 	depends on ARCH_SUPPORTS_LTO_CLANG
 	depends on !FTRACE_MCOUNT_USE_RECORDMCOUNT
 	depends on !KASAN || KASAN_HW_TAGS
