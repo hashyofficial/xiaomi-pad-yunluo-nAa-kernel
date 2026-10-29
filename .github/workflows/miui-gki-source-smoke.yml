@@ -107,7 +107,28 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o net/sched/sch_fifo.o drivers/media/usb/uvc/uvc_driver.o kernel/printk/printk.o net/netfilter/ipvs/ip_vs_ctl.o net/batman-adv/network-coding.o 2>&1 | tee report/patched-objects.log
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o net/sched/sch_fifo.o drivers/media/usb/uvc/uvc_driver.o kernel/printk/printk.o 2>&1 | tee report/patched-objects.log
+
+      - name: Compile IPVS and BATMAN-adv in isolated optional Kconfig (not stock)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Stock GKI does not enable these optional protocols. Do not alter
+          # out/.config, which has the stock-style full-LTO/CFI settings.
+          mkdir -p optional_out
+          make O="$PWD/optional_out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 gki_defconfig \
+            > report/optional-defconfig.log 2>&1
+          scripts/config --file optional_out/.config -e IP_VS -e BATMAN_ADV -e BATMAN_ADV_NC
+          make O="$PWD/optional_out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig \
+            >> report/optional-defconfig.log 2>&1
+          for opt in CONFIG_IP_VS CONFIG_BATMAN_ADV CONFIG_BATMAN_ADV_NC \
+                     CONFIG_LTO_CLANG_FULL CONFIG_CFI_CLANG CONFIG_KASAN_HW_TAGS; do
+            grep -Fxq "$opt=y" optional_out/.config || { echo "::error::Optional test config failed $opt"; exit 1; }
+          done
+          make O="$PWD/optional_out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 \
+            net/netfilter/ipvs/ip_vs_ctl.o net/batman-adv/network-coding.o \
+            2>&1 | tee report/optional-object-build.log
+          echo 'PASS: optional IPVS/BATMAN source compiled in isolated enabled configuration' | tee report/optional-verification.txt
 
       - name: Preserve build diagnostics only — never a boot image
         if: always()
