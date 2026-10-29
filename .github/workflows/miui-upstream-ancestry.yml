@@ -1,0 +1,67 @@
+name: MIUI kernel upstream ancestry and 5.10.168 merge feasibility (READ ONLY)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/miui-upstream-ancestry.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compare-source-ancestry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+          persist-credentials: false
+
+      - name: Compare Xiaomi stock and Lineage historical source ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit
+          LINEAGE_REPO='https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo.git'
+          LINEAGE_168='707c48210a5384a72c82655a37895b7e822755f2'
+          XIAOMI_ORIGINAL='d26d588883468251678619757cc9f0f6a5f37cb8'
+          echo "Current main: $(git rev-parse HEAD)" | tee audit/summary.txt
+          echo "Source version: $(sed -n 's/^SUBLEVEL = //p' Makefile | head -1) (5.10.x)" | tee -a audit/summary.txt
+          echo "Xiaomi original source revision: $XIAOMI_ORIGINAL" | tee -a audit/summary.txt
+          echo "MiCode module revision: 9d544781673359d4096ea4e2c18fc34a9a2c578e" | tee -a audit/summary.txt
+          echo "Lineage Linux 5.10.168 reference: $LINEAGE_168" | tee -a audit/summary.txt
+          # A fixed commit (not a branch name) avoids accidental upstream drift.
+          # Blobless fetch downloads history without checking out/overwriting code.
+          git -c protocol.version=2 fetch --no-tags --filter=blob:none "$LINEAGE_REPO" "$LINEAGE_168" > audit/fetch.txt 2>&1
+          test "$(git rev-parse FETCH_HEAD)" = "$LINEAGE_168"
+          git show FETCH_HEAD:Makefile | sed -n '1,7p' > audit/lineage168-Makefile.txt
+          if ! grep -q '^SUBLEVEL = 168$' audit/lineage168-Makefile.txt; then
+            echo '::error::Historical reference unexpectedly not Linux 5.10.168'
+            exit 1
+          fi
+          if git merge-base HEAD FETCH_HEAD > audit/merge-base.txt; then
+            echo 'History has an ancestor. Checking merge feasibility without altering main.' | tee -a audit/summary.txt
+            if git merge-tree --write-tree HEAD FETCH_HEAD > audit/merge-preview.txt 2>&1; then
+              echo 'Git merge-tree completed without textual conflicts. NOT proof of MIUI compatibility.' | tee -a audit/summary.txt
+            else
+              echo 'History merge would require conflict resolution. No files were changed.' | tee -a audit/summary.txt
+            fi
+          else
+            echo 'NO SHARED ANCESTOR: do NOT merge unrelated kernel trees with --allow-unrelated-histories.' | tee -a audit/summary.txt
+            echo 'Source changes must be ported and validated in controlled upstream patch sets.' | tee -a audit/summary.txt
+          fi
+          echo 'No files changed, no kernel release bumped, no branch created, no push.' | tee -a audit/summary.txt
+          cat audit/summary.txt
+
+      - name: Upload history and merge-feasibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yunluo-168-upstream-ancestry-report
+          path: audit/
+          if-no-files-found: warn
+          retention-days: 7
