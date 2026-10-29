@@ -1,0 +1,134 @@
+name: MIUI stock GKI ABI preflight — full kernel build (NONFLASHABLE)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/miui-full-kernel-abi-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  full-kernel-abi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      LLVM: '1'
+      LLVM_IAS: '1'
+      CROSS_COMPILE: aarch64-linux-gnu-
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          persist-credentials: false
+      - name: Install build tools and stock module readers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make bc bison flex libssl-dev libelf-dev \
+            binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu dwarves \
+            p7zip-full kmod erofs-utils liblz4-1
+      - name: Install verified stock-matching Android Clang r416183b
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/yunluo-android-clang
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            'https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang-r416183b.tar.gz' \
+            --output /tmp/yunluo-clang-r416183b.tar.gz
+          test "$(wc -c < /tmp/yunluo-clang-r416183b.tar.gz)" -gt 1000000
+          tar -xzf /tmp/yunluo-clang-r416183b.tar.gz -C /tmp/yunluo-android-clang
+          /tmp/yunluo-android-clang/bin/clang --version | grep -q 'clang version 12.0.5'
+          echo '/tmp/yunluo-android-clang/bin' >> "$GITHUB_PATH"
+      - name: Configure 5.10.101 GKI with full LTO and CFI required
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out report
+          {
+            echo 'WARNING: THIS IS XIAOMI 5.10.101, NOT THE STOCK MIUI 5.10.168 KERNEL.'
+            echo 'This run is diagnostic only and must not yield a boot.img.'
+          } | tee report/STATUS.txt
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 gki_defconfig \
+            > report/configure.log 2>&1
+          for required in CONFIG_MODVERSIONS CONFIG_CFI_CLANG CONFIG_ANDROID_VENDOR_HOOKS \
+                          CONFIG_LTO_CLANG_FULL CONFIG_KASAN_HW_TAGS; do
+            grep -Fxq "$required=y" out/.config || { echo "::error::$required missing"; exit 1; }
+          done
+          if grep -Fxq CONFIG_ARCH_MEDIATEK=y out/.config; then
+            echo '::error::This is not a MIUI generic kernel configuration'
+            exit 1
+          fi
+          grep -E '^(CONFIG_(MODVERSIONS|CFI_CLANG|LTO_CLANG_FULL|KASAN_HW_TAGS|ANDROID_VENDOR_HOOKS))=' out/.config \
+            | tee report/security-options.txt
+      - name: Link the actual kernel (never publish vmlinux or Image)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Starting full kernel link as a 5.10.101 diagnostic baseline.'
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 vmlinux \
+            > report/full-kernel-build.log 2>&1 || {
+              tail -100 report/full-kernel-build.log
+              echo 'BLOCKED: full 5.10.101 kernel build failed.' | tee -a report/STATUS.txt
+              exit 1
+            }
+          test -s out/Module.symvers
+          sha256sum out/Module.symvers > report/Module.symvers.sha256
+          wc -l out/Module.symvers | tee report/exported-symbols-count.txt
+          cp out/Module.symvers report/Module.symvers
+          echo 'Source-only kernel link completed. ABI comparison still required.' | tee -a report/STATUS.txt
+      - name: Compare real stock MIUI external module CRCs (expected baseline mismatch)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs pull --include=archive.7z
+          pointer="$(git show HEAD:archive.7z)"
+          sha="$(printf '%s\n' "$pointer" | sed -n 's/^oid sha256://p')"
+          size="$(printf '%s\n' "$pointer" | sed -n 's/^size //p')"
+          test "$(wc -c < archive.7z)" -eq "$size"
+          printf '%s  %s\n' "$sha" archive.7z | sha256sum -c
+          mkdir -p extract/vendor-modules extract/odm-modules
+          7z x -y -oextract archive.7z boot.img vendor_boot.img vendor_dlkm.img odm_dlkm.img > report/stock-image-extract.log
+          sha256sum extract/boot.img extract/vendor_boot.img extract/vendor_dlkm.img extract/odm_dlkm.img \
+            | tee report/stock-partition-sha256.txt
+          echo 'f2a20fd26ebaee6eee4e1d9fb0602afb97be7c3a8072ceb3c0e1bb840953ab95  extract/boot.img' \
+            | sha256sum -c
+          echo 'd9724f2712fb81745c26519e430375bbc9c759ac6df056496a404ef8ee456950  extract/vendor_boot.img' \
+            | sha256sum -c
+          echo '41f4c4b443bbf10cb6522874738df8c3e3351ade8f2e20a06da71d171da83ce0  extract/vendor_dlkm.img' \
+            | sha256sum -c
+          echo '9de9cd73c9d6274f7aa21662a7a863a330abeeef279650155ce18d58cd6082c0  extract/odm_dlkm.img' \
+            | sha256sum -c
+          fsck.erofs --extract="$PWD/extract/vendor-modules" extract/vendor_dlkm.img > report/vendor-erofs.log 2>&1
+          fsck.erofs --extract="$PWD/extract/odm-modules" extract/odm_dlkm.img > report/odm-erofs.log 2>&1
+          python3 scripts/yunluo/inspect_stock_boot.py extract/boot.img \
+            --output-config report/stock-miui14-kconfig.txt --output-json report/stock-boot.json
+          set +e
+          python3 scripts/yunluo/audit_stock_abi.py \
+            --vendor-boot extract/vendor_boot.img \
+            --vendor-dlkm-dir extract/vendor-modules \
+            --odm-dlkm-dir extract/odm-modules \
+            --stock-config report/stock-miui14-kconfig.txt \
+            --source-gki-config arch/arm64/configs/gki_defconfig \
+            --source-yunluo-config arch/arm64/configs/yunluo_defconfig \
+            --symvers out/Module.symvers \
+            --output report > report/ABI_CONSOLE_OUTPUT.txt 2>&1
+          audit_rc=$?
+          set -e
+          tail -120 report/ABI_CONSOLE_OUTPUT.txt
+          if [ "$audit_rc" -ne 0 ]; then
+            echo 'ABI BLOCKED: stock 5.10.168 vendor modules differ from candidate 5.10.101 exports.' | tee -a report/STATUS.txt
+            echo 'These are expected findings from a historical baseline, not a boot-ready result.' | tee -a report/STATUS.txt
+            exit "$audit_rc"
+          fi
+          echo 'Partial CRC agreement does not imply stock-MIUI 5.10.168 compatibility.' | tee -a report/STATUS.txt
+      - name: Publish diagnostics and CRC tables only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yunluo-kernel-full-build-and-stock-crc-preflight
+          path: report/
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
