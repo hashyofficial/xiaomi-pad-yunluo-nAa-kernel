@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0
+# Redmi Pad yunluo: safe GKI build *preview* for the published 5.10.101 source.
+# This is NOT the shipped stock MIUI 14 5.10.168 build configuration.
+# The MIUI stock generic GKI does not have CONFIG_ARCH_MEDIATEK=y.
+# Vendor hardware drivers are separate modules; do not embed them blindly.
+
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.common
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.aarch64
+
+DEFCONFIG=gki_defconfig
+KERNEL_DIR=kernel-5.10
+FILES="arch/arm64/boot/Image.gz"
+MAKE_GOALS="Image.gz"
+
+# The Xiaomi 5.10.101 GKI defconfig uses full Clang LTO (as shipped by MIUI).
+# For a full kernel image, use Android Clang 12.0.5 (r416183b) and the
+# original Android 12 GKI build environment after source 5.10.168 integration.
+# Never flash build outputs from this preview to the MIUI 14 tablet.
