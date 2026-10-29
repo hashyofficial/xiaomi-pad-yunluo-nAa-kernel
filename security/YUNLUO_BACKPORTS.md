@@ -29,6 +29,14 @@ This repository contains Xiaomi's publicly released Linux **5.10.101** kernel so
 - **Change:** When generating a port, skip both `VMADDR_PORT_ANY` and the reserved range, as in the upstream one-condition fix.
 - **State:** Applied to source; static regression checked; compilation, KMI and device testing pending.
 
+### Build compatibility 003 — LLVM full-LTO and CFI detection on modern tools
+
+- **File:** `arch/Kconfig`.
+- **Reason:** The original Xiaomi Kconfig examined only the first line of `llvm-nm --help` and `llvm-ar --help`; recent LLVM prints a blank first line, which makes Kconfig incorrectly select `CONFIG_LTO_NONE=y` and disables CFI.
+- **Change:** Check each LLVM tool's `--version` output instead. This checks the actual tool identity and does not weaken the LTO or CFI requirements.
+- **Kernel source commit:** https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/commit/41aa29db0268ec4e5dcc5f0f4d37cc7334fcb174
+- **Classification:** Build compatibility fix, **not** a claimed Android Security Bulletin patch. Source is still Linux 5.10.101; a successful native-clang smoke test does not prove compatibility with the stock Clang 12.0.5 build.
+
 ## Reviewed but deliberately NOT applied
 
 - **MediaTek CQDMA:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/dab666be25dae4c9c5d0746a018e78b2c0d53e24 — the latest source's physical-channel locking model is different from the code in Xiaomi 5.10.101. The patch does not apply directly; examine prerequisites before adapting it.
@@ -37,9 +45,9 @@ This repository contains Xiaomi's publicly released Linux **5.10.101** kernel so
 
 ## Firmware source of truth
 
-The `archive.7z` repository file is a **Git LFS pointer**, referring to an archive of 127,652,831 bytes with SHA-256:
+The `archive.7z` repository file is a **Git LFS pointer**, referring to an archive of 148,181,775 bytes with SHA-256:
 
-`70a529a1aa61d8677127fc19c1fa3707908b3fcd09030808fe36489c94444c59`
+`24db429b340660f2d9626e4bed3a4a626841bcb2dc638b854b1a21da1508ad53`
 
 The `miui-source-audit.yml` workflow downloads the LFS object on a GitHub runner and produces a read-only 7z inventory. It must never overwrite or redistribute the proprietary firmware images. Inspect firmware modules from `boot.img`, `vendor_boot.img`, `vendor_dlkm.img`, and `odm_dlkm.img` without modifying the originals.
 
