@@ -1,0 +1,60 @@
+name: MIUI kernel source and firmware inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'fs/userfaultfd.c'
+      - 'security/YUNLUO_BACKPORTS.md'
+      - 'scripts/yunluo/**'
+      - '.github/workflows/miui-source-audit.yml'
+      - 'archive.7z'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-backports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify fixes are in real kernel source
+        run: python3 scripts/yunluo/verify_backports.py
+
+  firmware-inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          persist-credentials: false
+      - name: Confirm exact LFS archive
+        run: |
+          set -euo pipefail
+          git lfs pull --include="archive.7z"
+          test "$(wc -c < archive.7z)" -eq 127652831
+          echo "70a529a1aa61d8677127fc19c1fa3707908b3fcd09030808fe36489c94444c59  archive.7z" | sha256sum -c
+      - name: Install 7z tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+      - name: List archive without extracting the images
+        run: |
+          set -euo pipefail
+          mkdir -p audit
+          sha256sum archive.7z > audit/archive.sha256
+          7z l -slt archive.7z > audit/archive-list.txt
+          {
+            echo "MIUI archive: exact LFS SHA-256 validated"
+            echo "Bytes: $(wc -c < archive.7z)"
+            echo "File names (first 150):"
+            grep '^Path = ' audit/archive-list.txt | head -150
+          } | tee audit/SUMMARY.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: miui-stock-firmware-inventory
+          path: audit/
+          retention-days: 7
