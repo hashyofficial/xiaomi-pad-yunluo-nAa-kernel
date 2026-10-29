@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - 'build.config.yunluo.miui14-gki-preview'
+      - 'arch/Kconfig'
+      - 'fs/userfaultfd.c'
+      - 'net/vmw_vsock/af_vsock.c'
       - '.github/workflows/miui-gki-source-smoke.yml'
 
 permissions:
