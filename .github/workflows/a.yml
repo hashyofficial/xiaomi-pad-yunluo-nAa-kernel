@@ -1,0 +1,51 @@
+name: Upload Google Drive Archive to Kernel Repo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Target Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          ref: main
+
+      - name: Install gdown and Git LFS
+        run: |
+          pip install gdown
+          sudo apt-get update && sudo apt-get install -y git-lfs
+          git lfs install
+
+      - name: Download Archive from Google Drive
+        run: |
+          echo "Downloading archive using gdown..."
+          gdown 1MuknQ5cjDynue1UXUcxsiC9KQRZlqkfh -O archive.7z
+          
+          # Check file size in megabytes
+          FILE_SIZE=$(du -m archive.7z | cut -f1)
+          echo "Downloaded file size: ${FILE_SIZE} MB"
+
+      - name: Track with Git LFS
+        run: |
+          git lfs track "*.7z"
+          git add .gitattributes
+
+      - name: Commit and Push Archive
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git config user.name "hashyofficial"
+          git config user.email "hashyofficial@gmail.com"
+          
+          # Increase Git HTTP postBuffer for large payloads
+          git config http.postBuffer 524288000
+          git config http.maxRequestBuffer 100M
+
+          git add archive.7z
+          git commit -m "Add archive from Google Drive"
+          
+          # Push changes back to main
+          git push origin main --force
