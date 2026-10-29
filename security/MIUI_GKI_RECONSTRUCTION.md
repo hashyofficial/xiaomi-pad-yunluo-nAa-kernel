@@ -109,3 +109,19 @@ Status is **research baseline complete, compiler/Kconfig and real 5.10.168 sourc
 3. Compare it against the 3,675 distinct symbols imported by 358 stock MediaTek modules; treat known CRC mismatches as failures.
 4. Only after passing ABI and hardware tests consider stable/ASB forward-port changes and experimental boot images.
 
+
+## Xiaomi vs. Lineage kernel ancestry — **no shared Git ancestor**
+
+[Run 40907370546](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40907370546) fetched the developer kernel's exact historical **5.10.168** source commit `707c48210a5384a72c82655a37895b7e822755f2`, verified its Makefile really says `5.10.168`, and evaluated `git merge-base` against the Xiaomi-based `main`.
+
+**Result: `NO SHARED ANCESTOR`.** Therefore this project must **not** use `git merge --allow-unrelated-histories`, `git merge -s ours`, a forced tree replacement, or cherry-pick broad Lineage configuration and MediaTek removals under the assumption of compatible history.
+
+**Safe integration route:** use the fixed Xiaomi release and stock MIUI 14 kernel config as the base, compare individual Android 12 GKI/stable/ASB patches from a known upstream reference, adapt them to this source in auditable commits on `main`, and rerun source, full build, module CRC and hardware checks. Only claim a full Linux 5.10.168 update after all required upstream changes are present, not because the `Makefile` says 168.
+
+This ancestry failure is independent of successful compilation of isolated source objects; it does not imply the stock modules would load against any generated 5.10.101 kernel.
+
+## Additional real source backports compiled on 2026-10-29
+
+[Build run 40907122827](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40907122827) completed successfully with AOSP Android Clang 12.0.5 r416183b, AArch64 target, hardware-tag KASAN, full LTO, CFI and MODVERSIONS.
+
+The following objects compiled: `fs/userfaultfd.o`, `net/vmw_vsock/af_vsock.o`, `net/sched/sch_fifo.o`, `drivers/media/usb/uvc/uvc_driver.o`. These were compile-only checks; **not a linked kernel, not a 5.10.168 source tree, and not proof of vendor module ABI compatibility**.
