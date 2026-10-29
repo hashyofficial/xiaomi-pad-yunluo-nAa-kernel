@@ -21,6 +21,7 @@ jobs:
     env:
       LLVM: '1'
       LLVM_IAS: '1'
+      CROSS_COMPILE: 'aarch64-linux-gnu-'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,7 +31,7 @@ jobs:
       - name: Install kernel build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y make bc bison flex libssl-dev libelf-dev
+          sudo apt-get install -y make bc bison flex libssl-dev libelf-dev binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
 
       - name: Obtain original Android 12 Clang 12.0.5 (r416183b) from AOSP
         shell: bash
@@ -53,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out report
-          make O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig 2>&1 | tee report/kconfig.log
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 gki_defconfig 2>&1 | tee report/kconfig.log
           {
             echo '--- compiler and LLVM build tools ---'
             command -v clang && clang --version | sed -n '1,2p'
@@ -61,6 +62,10 @@ jobs:
             command -v llvm-nm && llvm-nm --help | sed -n '1,2p'
             command -v llvm-ar && llvm-ar --help | sed -n '1,2p'
             echo '--- GKI LTO/CFI eligibility ---'
+            echo "CROSS_COMPILE=$CROSS_COMPILE"
+            command -v aarch64-linux-gnu-elfedit
+            echo "ARM64 assembler / KASAN prerequisites"
+            grep -E '^(# )?CONFIG_(ARM64_MTE|ARM64_AS_HAS_MTE|ARM64_TAGGED_ADDR_ABI|AS_HAS_ARMV8_5|ARM64_PAN|AS_HAS_LSE_ATOMICS|HAVE_ARCH_KASAN_HW_TAGS|KASAN_HW_TAGS|KASAN_GENERIC|FTRACE_MCOUNT_USE_RECORDMCOUNT)' out/.config || true
             echo "PATH=$PATH"
             echo "LLVM=$LLVM LLVM_IAS=$LLVM_IAS"
             command -v clang && command -v llvm-nm && command -v llvm-ar
@@ -91,13 +96,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          make O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 -j2 prepare 2>&1 | tee report/prepare.log
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 prepare 2>&1 | tee report/prepare.log
 
       - name: Compile directly modified kernel source objects
         shell: bash
         run: |
           set -o pipefail
-          make O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o 2>&1 | tee report/patched-objects.log
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o 2>&1 | tee report/patched-objects.log
 
       - name: Preserve build diagnostics only — never a boot image
         if: always()
