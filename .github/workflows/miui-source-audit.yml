@@ -53,6 +53,29 @@ jobs:
             echo "File names (first 150):"
             grep '^Path = ' audit/archive-list.txt | head -150
           } | tee audit/SUMMARY.txt
+      - name: Compare archived partitions with stock image references
+        run: |
+          set -euo pipefail
+          mkdir -p extract
+          7z x -y -oextract archive.7z vendor_boot.img vendor_dlkm.img odm_dlkm.img dtbo.img > audit/selective-extract.log
+          sha256sum extract/*.img | tee audit/partition-sha256.txt
+          {
+            echo 'Comparison with separately uploaded MIUI reference images:'
+            for p in vendor_boot vendor_dlkm odm_dlkm; do
+              case "$p" in
+                vendor_boot) reference="d9724f2712fb81745c26519e430375bbc9c759ac6df056496a404ef8ee456950" ;;
+                vendor_dlkm) reference="41f4c4b443bbf10cb6522874738df8c3e3351ade8f2e20a06da71d171da83ce0" ;;
+                odm_dlkm) reference="9de9cd73c9d6274f7aa21662a7a863a330abeeef279650155ce18d58cd6082c0" ;;
+              esac
+              current=$(sha256sum "extract/${p}.img" | cut -d' ' -f1)
+              if [ "$current" = "$reference" ]; then
+                echo "$p: MATCH ($current)"
+              else
+                echo "$p: DIFFERENT (archive: $current; uploaded: $reference)"
+              fi
+            done
+          } | tee audit/REFERENCE_COMPARISON.txt
+          rm -rf extract
       - uses: actions/upload-artifact@v4
         with:
           name: miui-stock-firmware-inventory
