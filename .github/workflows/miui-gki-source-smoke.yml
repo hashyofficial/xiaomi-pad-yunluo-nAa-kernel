@@ -1,0 +1,66 @@
+name: MIUI 14 GKI source compile smoke (NOT FLASHABLE)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'build.config.yunluo.miui14-gki-preview'
+      - '.github/workflows/miui-gki-source-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  config-and-objects:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          persist-credentials: false
+
+      - name: Install native LLVM kernel build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm make bc bison flex libssl-dev libelf-dev
+
+      - name: Build Xiaomi 5.10.101 GKI configuration (not stock 5.10.168)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out report
+          make O="$PWD/out" ARCH=arm64 LLVM=1 gki_defconfig 2>&1 | tee report/kconfig.log
+          grep -Fxq 'CONFIG_MODVERSIONS=y' out/.config
+          grep -Fxq 'CONFIG_CFI_CLANG=y' out/.config
+          grep -Fxq 'CONFIG_ANDROID_VENDOR_HOOKS=y' out/.config
+          grep -Fxq 'CONFIG_LTO_CLANG_FULL=y' out/.config
+          if grep -Fxq 'CONFIG_ARCH_MEDIATEK=y' out/.config; then
+            echo '::error::Generic MIUI GKI kernel unexpectedly includes MediaTek hardware drivers'
+            exit 1
+          fi
+          sed -n '1,10p' Makefile > report/source-version.txt
+          grep -E 'CONFIG_(MODVERSIONS|CFI_CLANG|ANDROID_VENDOR_HOOKS|LTO_CLANG_FULL)=' out/.config > report/selected-config.txt
+          echo 'Baseline Kconfig selected; this source is still Linux 5.10.101.'
+
+      - name: Prepare GKI kernel build headers
+        shell: bash
+        run: |
+          set -o pipefail
+          make O="$PWD/out" ARCH=arm64 LLVM=1 -j2 prepare 2>&1 | tee report/prepare.log
+
+      - name: Compile directly modified kernel source objects
+        shell: bash
+        run: |
+          set -o pipefail
+          make O="$PWD/out" ARCH=arm64 LLVM=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o 2>&1 | tee report/patched-objects.log
+
+      - name: Preserve build diagnostics only — never a boot image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: miui-gki-101-source-smoke-logs
+          path: report/
+          if-no-files-found: warn
+          retention-days: 7
