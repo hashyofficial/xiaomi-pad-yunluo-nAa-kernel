@@ -1,0 +1,81 @@
+name: MIUI Android 12 GKI 5.10.101-to-5.10.168 gap inventory (READ ONLY)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/miui-android-gki-168-gap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  android-gki-gap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          persist-credentials: false
+      - name: Audit pinned official Android GKI kernel source revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report aosp
+          echo 'Android common upstream history comparison ONLY — no Xiaomi source changes.' | tee report/STATUS.txt
+          echo 'Xiaomi source remains Linux 5.10.101; MIUI boot.img reports Android GKI 5.10.168.' | tee -a report/STATUS.txt
+          old='1419b694038104c01bbb46e7ef968e8632e3dc5c'
+          new='fb0cece721e4bc2ead3ebcc120c0311ac7cd0654'
+          cd aosp
+          git init -q
+          git remote add official https://android.googlesource.com/kernel/common
+          # Keep blob downloads on-demand and bound old history with a shallow date.
+          git -c protocol.version=2 fetch --no-tags --filter=blob:none --shallow-since=2022-01-01 \
+            official "$old" "$new" 2>&1 | tee ../report/fetch.log
+          test "$(git rev-parse "$old")" = "$old"
+          test "$(git rev-parse "$new")" = "$new"
+          old_level="$(git show "$old":Makefile | sed -n 's/^SUBLEVEL = //p' | head -1)"
+          new_level="$(git show "$new":Makefile | sed -n 's/^SUBLEVEL = //p' | head -1)"
+          echo "old Linux sublevel: $old_level" | tee ../report/versions.txt
+          echo "new Linux sublevel: $new_level" | tee -a ../report/versions.txt
+          if [ "$old_level" != 101 ] || [ "$new_level" != 168 ]; then
+            echo '::error::AOSP baseline versions do not match expected 101 and 168'
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$old" "$new"; then
+            echo '::error::AOSP history incomplete or unexpected (not an ancestor); do not infer a patch series.'
+            exit 1
+          fi
+          git diff --name-status "$old" "$new" > ../report/aosp-changed-paths.tsv
+          git log --no-merges --pretty=format:'%h %s' "$old..$new" \
+            > ../report/aosp-commit-subjects.txt
+          wc -l ../report/aosp-changed-paths.tsv ../report/aosp-commit-subjects.txt \
+            | tee ../report/change-counts.txt
+          python3 - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          lines=Path('../report/aosp-changed-paths.tsv').read_text().splitlines()
+          changed=[]
+          for line in lines:
+              cols=line.split('\t')
+              changed.extend(cols[-1:])
+          counts=Counter(path.split('/',1)[0] for path in changed if path)
+          report=['Read-only AOSP 5.10.101 to 5.10.168 changed path summary',
+                  'This is NOT a list of patches already applied to Xiaomi or proof of MIUI ABI compatibility.',
+                  f'Total changed paths: {len(changed)}', '']
+          report.extend(f'{category}: {count}' for category,count in counts.most_common())
+          Path('../report/SUMMARY.txt').write_text('\n'.join(report)+'\n')
+          print('\n'.join(report))
+          PY
+          echo 'No Git history on main was changed, no new branch or boot image.' | tee -a ../report/STATUS.txt
+
+      - name: Preserve upstream gap analysis only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android12-gki-101-to-168-source-delta
+          path: report/
+          if-no-files-found: warn
+          retention-days: 7

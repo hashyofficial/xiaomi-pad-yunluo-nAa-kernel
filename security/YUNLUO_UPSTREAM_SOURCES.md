@@ -37,3 +37,16 @@ All commit IDs are fixed reference snapshots, not invitations to track changing 
 5. Before any flashable build, compare the candidate `Module.symvers` against stock modules' 3,675 distinct imported symbols across 358 modules and retain the rollback firmware.
 
 `archive.7z` is the separately verified stock firmware input, not an output to repack or overwrite during source integration.
+
+## Official Android 12 GKI upstream checkpoints — 5.10.101 to 5.10.168
+
+These are separate **Google Android common kernel** histories, not alternate names for Xiaomi's proprietary build:
+
+| Kernel version | Official Android 12 GKI integration commit | Scope |
+|---|---|---|
+| 5.10.101 | [`1419b694038104c01bbb46e7ef968e8632e3dc5c`](https://android.googlesource.com/kernel/common/+/1419b694038104c01bbb46e7ef968e8632e3dc5c) | Android 12 GKI merge of Linux 5.10.101, March 2022 |
+| 5.10.168 | [`fb0cece721e4bc2ead3ebcc120c0311ac7cd0654`](https://android.googlesource.com/kernel/common/+/fb0cece721e4bc2ead3ebcc120c0311ac7cd0654) | Android 12 GKI merge of Linux 5.10.168, March 2023 |
+
+The 5.10.168 integration references the same historical Linux 5.10.168 stable version bump `707c48210a5384a72c82655a37895b7e822755f2` found in the Lineage developer history. However, this **does not establish equivalence** with the exact Xiaomi MIUI 14 boot image: that kernel has its own Android GKI build number, patch state and MediaTek module ABI.
+
+`.github/workflows/miui-android-gki-168-gap.yml` performs a read-only *Google-to-Google* changed-path and patch-history audit between these pinned integration commits. It does not modify the repository or permit automatic merging from Google/Lineage into Xiaomi code. Each patch still needs a compatibility review and compile check, especially in Android vendor hooks, security, memory management and networking.
