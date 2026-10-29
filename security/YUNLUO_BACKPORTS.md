@@ -37,6 +37,20 @@ This repository contains Xiaomi's publicly released Linux **5.10.101** kernel so
 - **Kernel source commit:** https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/commit/41aa29db0268ec4e5dcc5f0f4d37cc7334fcb174
 - **Classification:** Build compatibility fix, **not** a claimed Android Security Bulletin patch. Source is still Linux 5.10.101; a successful native-clang smoke test does not prove compatibility with the stock Clang 12.0.5 build.
 
+### Backport 004 — zero-limit packet FIFO drop
+
+- **Upstream reference:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/85d1db8a9d1293a979f81f4f8b5cc142822be9cb (fix included in a later Android 12 security-maintained history). This specific hunk was independently verified against the current Xiaomi source.
+- **File:** `net/sched/sch_fifo.c`, `pfifo_tail_enqueue()`.
+- **Change:** Immediately drop the packet if `sch->limit == 0` before inspecting or removing a non-existent queue head.
+- **Validation:** Static check plus AArch64 Clang 12 object compilation. No Android Security Bulletin patch level is implied.
+
+### Backport 005 — minimum USB video format descriptor length
+
+- **Upstream reference:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/1e269581b3aa5962fdc52757ab40da286168c087
+- **File:** `drivers/media/usb/uvc/uvc_driver.c`, `uvc_parse_format()`.
+- **Change:** Reject a format descriptor shorter than four bytes before accessing `buffer[2]` or `buffer[3]`.
+- **Validation:** Static check plus AArch64 Clang 12 object compilation. No CVE/ASB level certified.
+
 ## Reviewed but deliberately NOT applied
 
 - **MediaTek CQDMA:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/dab666be25dae4c9c5d0746a018e78b2c0d53e24 — the latest source's physical-channel locking model is different from the code in Xiaomi 5.10.101. The patch does not apply directly; examine prerequisites before adapting it.

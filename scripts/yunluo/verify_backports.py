@@ -34,6 +34,21 @@ if "port <= LAST_RESERVED_PORT)" not in vsock:
     raise SystemExit("FAIL: vsock reserved port guard is missing")
 print("PASS: vsock autobind checks wildcard and reserved port range")
 
+fifo = Path("net/sched/sch_fifo.c").read_text(encoding="utf-8")
+fifo_expected = "if (unlikely(sch->limit == 0))\\n\\t\\treturn qdisc_drop(skb, sch, to_free);"
+if fifo_expected.replace("\\\\n", "\\n").replace("\\\\t", "\\t") not in fifo:
+    raise SystemExit("FAIL: pfifo_tail limit zero must drop without dereference")
+print("PASS: pfifo_tail zero-limit drop guard")
+
+uvc = Path("drivers/media/usb/uvc/uvc_driver.c").read_text(encoding="utf-8")
+start = uvc.index("static int uvc_parse_format(")
+body = uvc[start:uvc.index("switch (buffer[2])", start)]
+if body.count("if (buflen < 4)\\n\\t\\treturn -EINVAL;".replace("\\\\n", "\\n").replace("\\\\t", "\\t")) != 1:
+    raise SystemExit("FAIL: UVC descriptor min length validation absent")
+if body.index("if (buflen < 4)") > body.index("format->type = buffer[2]"):
+    raise SystemExit("FAIL: UVC bounds check must be before buffer[2] access")
+print("PASS: UVC format descriptor length checked before access")
+
 makefile = Path("Makefile").read_text(encoding="utf-8")
 parts = []
 for field in ("VERSION", "PATCHLEVEL", "SUBLEVEL"):
