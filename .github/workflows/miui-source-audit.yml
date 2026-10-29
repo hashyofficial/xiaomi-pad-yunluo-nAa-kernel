@@ -9,6 +9,7 @@ on:
       - 'scripts/yunluo/**'
       - '.github/workflows/miui-source-audit.yml'
       - 'archive.7z'
+      - 'security/MIUI_GKI_RECONSTRUCTION.md'
   workflow_dispatch:
 
 permissions:
@@ -44,7 +45,7 @@ jobs:
       - name: Install 7z tool
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full
+          sudo apt-get install -y p7zip-full kmod erofs-utils liblz4-1
       - name: List archive without extracting the images
         run: |
           set -euo pipefail
@@ -85,6 +86,26 @@ jobs:
             done
           } | tee audit/REFERENCE_COMPARISON.txt
           python3 scripts/yunluo/inspect_stock_boot.py extract/boot.img --output-config audit/stock-miui14-kconfig.txt --output-json audit/stock-boot.json
+      - name: Extract EROFS modules and inventory required ABI symbols (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extract/vendor-modules extract/odm-modules
+          fsck.erofs --extract="$PWD/extract/vendor-modules" extract/vendor_dlkm.img > audit/vendor-erofs-extraction.log 2>&1
+          fsck.erofs --extract="$PWD/extract/odm-modules" extract/odm_dlkm.img > audit/odm-erofs-extraction.log 2>&1
+          curl --fail --location --retry 3 \
+            'https://raw.githubusercontent.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/vic/arch/arm64/configs/gki_defconfig' \
+            --output audit/lineage-vic-gki_defconfig.txt
+          python3 scripts/yunluo/audit_stock_abi.py \
+            --vendor-boot extract/vendor_boot.img \
+            --vendor-dlkm-dir extract/vendor-modules \
+            --odm-dlkm-dir extract/odm-modules \
+            --stock-config audit/stock-miui14-kconfig.txt \
+            --source-gki-config arch/arm64/configs/gki_defconfig \
+            --source-yunluo-config arch/arm64/configs/yunluo_defconfig \
+            --lineage-gki-config audit/lineage-vic-gki_defconfig.txt \
+            --output audit > audit/ABI_CONSOLE_OUTPUT.txt
+          cat audit/ABI_CONSOLE_OUTPUT.txt | head -150
           rm -rf extract
       - uses: actions/upload-artifact@v4
         with:
