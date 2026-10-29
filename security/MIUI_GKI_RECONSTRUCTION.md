@@ -55,3 +55,16 @@ The first complete audit [Actions run 40899816068](https://github.com/hashyoffic
 - `build.config.yunluo.miui14-gki-preview` explicitly uses **GKI** source configuration rather than the old `yunluo_defconfig` hardware-in-kernel configuration.
 - `.github/workflows/miui-gki-source-smoke.yml` compiles the existing 5.10.101 source's config, build preparation, and two patched objects using the runner's LLVM toolchain; it does **not** claim a stock 5.10.168 build, ABI compatibility, or a bootable kernel.
 - If compilation fails, record the actual errors and fix only source/toolchain issues supported by evidence. Do not rename the version or remove MIUI-required flags to force a green build.
+
+## GKI source compilation smoke — **BLOCKED**, 2026-10-29
+
+[Latest smoke job 40901827255](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40901827255):
+
+- GKI `gki_defconfig` generation completed with Ubuntu's Clang **18.1.3** and LLD.
+- `CONFIG_MODVERSIONS=y` and `CONFIG_ANDROID_VENDOR_HOOKS=y` remained enabled, and `CONFIG_ARCH_MEDIATEK` remained disabled.
+- However the generated `.config` selected `CONFIG_LTO_NONE=y` and consequently did **not** enable `CONFIG_CFI_CLANG=y` or `CONFIG_LTO_CLANG_FULL=y`. The job failed the intentional configuration gate **before** object compilation. Hence no kernel, `Module.symvers`, or boot image was produced.
+- The `arch/Kconfig` tool identity check was made more robust for recent LLVM help output, but **that change alone did not resolve the LTO prerequisite**. Do not misreport it as a verified fix for this build.
+- Passing `LLVM=1` and `LLVM_IAS=1` both on `make` and in the runner's environment was insufficient. Additional Kconfig dependency diagnosis and/or the original **Android Clang 12.0.5 (r416183b)** toolchain are required.
+- Do **not** remove the LTO/CFI guard to force green. These flags are part of the verified stock MIUI kernel configuration.
+
+Status is **research baseline complete, compiler/Kconfig and real 5.10.168 source baseline still unresolved**. A native LLVM18 smoke failure does not establish that the kernel code cannot be built using its intended Android toolchain.
