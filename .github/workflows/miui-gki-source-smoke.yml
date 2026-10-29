@@ -27,10 +27,26 @@ jobs:
           lfs: false
           persist-credentials: false
 
-      - name: Install native LLVM kernel build prerequisites
+      - name: Install kernel build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm make bc bison flex libssl-dev libelf-dev
+          sudo apt-get install -y make bc bison flex libssl-dev libelf-dev
+
+      - name: Obtain original Android 12 Clang 12.0.5 (r416183b) from AOSP
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang-r416183b.tar.gz'
+          mkdir -p /tmp/yunluo-android-clang
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 780 "$url" --output /tmp/yunluo-clang-r416183b.tar.gz
+          test "$(wc -c < /tmp/yunluo-clang-r416183b.tar.gz)" -gt 1000000
+          tar -xzf /tmp/yunluo-clang-r416183b.tar.gz -C /tmp/yunluo-android-clang
+          test -x /tmp/yunluo-android-clang/bin/clang
+          test -x /tmp/yunluo-android-clang/bin/llvm-nm
+          test -x /tmp/yunluo-android-clang/bin/llvm-ar
+          /tmp/yunluo-android-clang/bin/clang --version | sed -n '1,2p'
+          /tmp/yunluo-android-clang/bin/clang --version | grep -q 'clang version 12.0.5'
+          echo '/tmp/yunluo-android-clang/bin' >> "$GITHUB_PATH"
 
       - name: Build Xiaomi 5.10.101 GKI configuration (not stock 5.10.168)
         shell: bash
@@ -45,7 +61,15 @@ jobs:
             command -v llvm-nm && llvm-nm --help | sed -n '1,2p'
             command -v llvm-ar && llvm-ar --help | sed -n '1,2p'
             echo '--- GKI LTO/CFI eligibility ---'
-            grep -E '(CONFIG_(CC_IS_CLANG|LD_IS_LLD|CLANG_VERSION|KALLSYMS|HAS_LTO_CLANG|ARCH_SUPPORTS_LTO_CLANG|FTRACE_MCOUNT_USE_RECORDMCOUNT|COMPILE_TEST|GCOV_KERNEL|LTO_|CFI_CLANG|MODVERSIONS|ANDROID_VENDOR_HOOKS|ARCH_MEDIATEK))' out/.config || true
+            echo "PATH=$PATH"
+            echo "LLVM=$LLVM LLVM_IAS=$LLVM_IAS"
+            command -v clang && command -v llvm-nm && command -v llvm-ar
+            echo "Tool probe:"
+            llvm-nm --version | sed -n '1,2p'
+            llvm-ar --version | sed -n '1,2p'
+            test "$LLVM" -eq 1 && echo "LLVM variable present"
+            test "$LLVM_IAS" -eq 1 && echo "LLVM_IAS variable present"
+            grep -E '(CONFIG_(CC_IS_CLANG|LD_IS_LLD|CLANG_VERSION|KALLSYMS|HAS_LTO_CLANG|ARCH_SUPPORTS_LTO_CLANG|FTRACE_MCOUNT_USE_RECORDMCOUNT|COMPILE_TEST|GCOV_KERNEL|LTO_|CFI_CLANG|MODVERSIONS|ANDROID_VENDOR_HOOKS|ARCH_MEDIATEK|KASAN|SHADOW_CALL_STACK))' out/.config || true
           } | tee report/llvm-eligibility.txt
           grep -E '(CONFIG_(MODVERSIONS|CFI_CLANG|ANDROID_VENDOR_HOOKS|LTO_CLANG|ARCH_MEDIATEK))' out/.config > report/critical-config.txt || true
           cat report/critical-config.txt
