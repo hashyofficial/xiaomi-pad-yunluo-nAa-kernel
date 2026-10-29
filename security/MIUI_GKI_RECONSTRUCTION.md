@@ -77,3 +77,35 @@ Status is **research baseline complete, compiler/Kconfig and real 5.10.168 sourc
 - The published `Makefile` only passes a non-host `--target` to Clang when `CROSS_COMPILE` is nonempty. Running `ARCH=arm64 LLVM=1` alone leaves the assembler feature probes vulnerable to running against the host architecture, making `ARM64_MTE` unavailable and forcing generic KASAN. This is a **plausible root cause** pending confirmation by the new build check.
 - The smoke workflow now sets `CROSS_COMPILE=aarch64-linux-gnu-`, uses AArch64 binutils, and verifies ARM64 MTE, KASAN, full LTO and CFI flags. **Do not weaken these stock security settings to make a test pass.**
 - Official upstream Android 12 GKI's most recent release is [`android12-5.10-2026-10_r1`](https://android.googlesource.com/kernel/common/+/refs/tags/android12-5.10-2026-10_r1), dated **2026-10-28**, Linux **5.10.269**. That is a reference for subsequent security maintenance, **not** a safe drop-in replacement for the MIUI 5.10.168 kernel without KMI validation.
+
+## Compiler/CFI blocker resolved — verified on 2026-10-29
+
+[Successful compile smoke run 40904904093](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40904904093) is the first green source compile and security-configuration test.
+
+| Build check | Verified result |
+|---|---|
+| Compiler | Android (7284624, r416183b) Clang 12.0.5 (matching MIUI) |
+| AArch64 cross target | `CROSS_COMPILE=aarch64-linux-gnu-` |
+| `CONFIG_ARM64_AS_HAS_MTE` | `y` |
+| `CONFIG_ARM64_MTE` | `y` |
+| `CONFIG_KASAN_HW_TAGS` | `y` |
+| `CONFIG_KASAN_GENERIC` | not set |
+| `CONFIG_LTO_CLANG_FULL` | `y` |
+| `CONFIG_CFI_CLANG` and `CONFIG_CFI_CLANG_SHADOW` | `y` |
+| `CONFIG_MODVERSIONS` | `y` |
+| `CONFIG_ANDROID_VENDOR_HOOKS` | `y` |
+| `make ... prepare` | passed |
+| `fs/userfaultfd.o` | compiled |
+| `net/vmw_vsock/af_vsock.o` | compiled |
+
+**Root cause confirmed:** The old Makefile needs a nonempty AArch64 `CROSS_COMPILE` value to pass the appropriate `--target` to Clang. Without it, ARM64 MTE assembler checks fail, KASAN defaults to generic, and full LTO/CFI is disabled. The official Clang r416183b alone is not enough; using the original ARM64 target prefix is essential.
+
+**This establishes only that the existing Linux 5.10.101 source can prepare its GKI configuration and compile the two changed source files.** It does **not** produce a complete `vmlinux`, `Module.symvers`, a kernel image, or a flashable `boot.img`. No candidate ABI/CRC comparison has been performed yet and the Xiaomi source `Makefile` version remains 5.10.101.
+
+### Required follow-on gates
+
+1. Integrate a real Android 12 GKI 5.10.168 source baseline into the tracked kernel tree without replacing device-support code blindly or faking the version number.
+2. Perform a complete kernel build with the verified Clang/ARM64 configuration and record the candidate `Module.symvers`.
+3. Compare it against the 3,675 distinct symbols imported by 358 stock MediaTek modules; treat known CRC mismatches as failures.
+4. Only after passing ABI and hardware tests consider stable/ASB forward-port changes and experimental boot images.
+
