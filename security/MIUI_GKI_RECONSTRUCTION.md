@@ -125,3 +125,23 @@ This ancestry failure is independent of successful compilation of isolated sourc
 [Build run 40907122827](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40907122827) completed successfully with AOSP Android Clang 12.0.5 r416183b, AArch64 target, hardware-tag KASAN, full LTO, CFI and MODVERSIONS.
 
 The following objects compiled: `fs/userfaultfd.o`, `net/vmw_vsock/af_vsock.o`, `net/sched/sch_fifo.o`, `drivers/media/usb/uvc/uvc_driver.o`. These were compile-only checks; **not a linked kernel, not a 5.10.168 source tree, and not proof of vendor module ABI compatibility**.
+
+## Official Android GKI 5.10.101-to-5.10.168 gap — verified 2026-10-30
+
+[Successful read-only comparison run 40974041610](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40974041610) fetched two **fixed Android 12 GKI integration commits** from AOSP:
+`1419b694038104c01bbb46e7ef968e8632e3dc5c` (5.10.101) and
+`fb0cece721e4bc2ead3ebcc120c0311ac7cd0654` (5.10.168).
+The workflow confirmed the first is a Git ancestor of the second, and both have the expected `SUBLEVEL` values.
+
+- **8,322** non-merge commit subjects fall in `old..new` within that official Android GKI history.
+- **5,532** paths have differing final contents/status between those two source trees.
+- Changed-path counts by prominent subsystem: `drivers/` **2,486**, `arch/` **1,057**, `net/` **441**, `fs/` **365**, `include/` **319**, `sound/` **206**, `kernel/` **128**, `mm/` **69**, `security/` **46**.
+- The artifact includes the complete changed-path table and upstream commit-subject inventory (source history metadata only).
+- These figures measure **AOSP-to-AOSP upstream changes**; they **do not tell us that Xiaomi is missing all 8,322 patches**, since the Xiaomi-published kernel has its own MediaTek/Xiaomi differences and backports.
+- The audit made **no changes to kernel source, its Git history, or modules**. It is a roadmap for selecting and validating relevant stable/Android patches; copying all of the changed files wholesale would be unsafe.
+
+## Full kernel build preflight — independent from source object smoke tests
+
+[Initial full-kernel attempt 40909783927](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40909783927) retained full LTO, CFI, HW-tag KASAN, and MODVERSIONS, then received an external GitHub runner **shutdown signal, exit code 143** while linking `vmlinux`. Compiler output was redirected to a file and lost when the runner stopped, so this run cannot be interpreted as a C source failure or success. **No `Module.symvers` or stock-vendor CRC result was obtained.**
+
+The revised `miui-full-kernel-abi-preflight.yml` now streams compiler diagnostics to the GitHub Actions live log, records runner resources, uses `-j4`, and publishes only source-build diagnostics and exported-symbol tables. No boot image or flashable artifact is produced. The linked-kernel and vendor-module ABI gates remain open until a complete run verifies them.
