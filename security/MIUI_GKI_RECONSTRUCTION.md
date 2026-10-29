@@ -68,3 +68,12 @@ The first complete audit [Actions run 40899816068](https://github.com/hashyoffic
 - Do **not** remove the LTO/CFI guard to force green. These flags are part of the verified stock MIUI kernel configuration.
 
 Status is **research baseline complete, compiler/Kconfig and real 5.10.168 source baseline still unresolved**. A native LLVM18 smoke failure does not establish that the kernel code cannot be built using its intended Android toolchain.
+
+## Android Clang r416183b and AArch64 compiler target — 2026-10-29
+
+- The original Google AOSP `clang-r416183b` archive (fixed AOSP revision `bd96dfe349c962681f0e5388af874c771ef96670`) was successfully fetched on the GitHub Actions runner in [run 40903972470](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40903972470).
+- `clang --version` reports `Android (7284624, based on r416183b) clang version 12.0.5`, **matching the compiler build identified in the stock boot image**.
+- The first Clang 12 build configuration still selected `CONFIG_KASAN_GENERIC=y` instead of the stock `CONFIG_KASAN_HW_TAGS=y`. In the old Kconfig, `HAS_LTO_CLANG` requires `!KASAN || KASAN_HW_TAGS`, therefore generic KASAN prevents enabling full LTO and CFI.
+- The published `Makefile` only passes a non-host `--target` to Clang when `CROSS_COMPILE` is nonempty. Running `ARCH=arm64 LLVM=1` alone leaves the assembler feature probes vulnerable to running against the host architecture, making `ARM64_MTE` unavailable and forcing generic KASAN. This is a **plausible root cause** pending confirmation by the new build check.
+- The smoke workflow now sets `CROSS_COMPILE=aarch64-linux-gnu-`, uses AArch64 binutils, and verifies ARM64 MTE, KASAN, full LTO and CFI flags. **Do not weaken these stock security settings to make a test pass.**
+- Official upstream Android 12 GKI's most recent release is [`android12-5.10-2026-10_r1`](https://android.googlesource.com/kernel/common/+/refs/tags/android12-5.10-2026-10_r1), dated **2026-10-28**, Linux **5.10.269**. That is a reference for subsequent security maintenance, **not** a safe drop-in replacement for the MIUI 5.10.168 kernel without KMI validation.
