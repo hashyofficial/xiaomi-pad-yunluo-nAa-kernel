@@ -35,8 +35,12 @@ jobs:
         run: |
           set -euo pipefail
           git lfs pull --include="archive.7z"
-          test "$(wc -c < archive.7z)" -eq 127652831
-          echo "70a529a1aa61d8677127fc19c1fa3707908b3fcd09030808fe36489c94444c59  archive.7z" | sha256sum -c
+          pointer="$(git show HEAD:archive.7z)"
+          expected_sha="$(printf '%s\n' "$pointer" | sed -n 's/^oid sha256://p')"
+          expected_size="$(printf '%s\n' "$pointer" | sed -n 's/^size //p')"
+          test "${#expected_sha}" -eq 64
+          test "$(wc -c < archive.7z)" -eq "$expected_size"
+          printf '%s  %s\n' "$expected_sha" archive.7z | sha256sum -c
       - name: Install 7z tool
         run: |
           sudo apt-get update
@@ -47,6 +51,9 @@ jobs:
           mkdir -p audit
           sha256sum archive.7z > audit/archive.sha256
           7z l -slt archive.7z > audit/archive-list.txt
+          for required in boot.img vendor_boot.img vendor_dlkm.img odm_dlkm.img dtbo.img; do
+            grep -Fxq "Path = $required" audit/archive-list.txt || { echo "::error::Missing $required"; exit 1; }
+          done
           {
             echo "MIUI archive: exact LFS SHA-256 validated"
             echo "Bytes: $(wc -c < archive.7z)"
@@ -57,12 +64,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p extract
-          7z x -y -oextract archive.7z vendor_boot.img vendor_dlkm.img odm_dlkm.img dtbo.img > audit/selective-extract.log
+          7z x -y -oextract archive.7z boot.img vendor_boot.img vendor_dlkm.img odm_dlkm.img dtbo.img > audit/selective-extract.log
           sha256sum extract/*.img | tee audit/partition-sha256.txt
           {
             echo 'Comparison with separately uploaded MIUI reference images:'
-            for p in vendor_boot vendor_dlkm odm_dlkm; do
+            for p in boot vendor_boot vendor_dlkm odm_dlkm; do
               case "$p" in
+                boot) reference="f2a20fd26ebaee6eee4e1d9fb0602afb97be7c3a8072ceb3c0e1bb840953ab95" ;;
                 vendor_boot) reference="d9724f2712fb81745c26519e430375bbc9c759ac6df056496a404ef8ee456950" ;;
                 vendor_dlkm) reference="41f4c4b443bbf10cb6522874738df8c3e3351ade8f2e20a06da71d171da83ce0" ;;
                 odm_dlkm) reference="9de9cd73c9d6274f7aa21662a7a863a330abeeef279650155ce18d58cd6082c0" ;;
@@ -71,10 +79,12 @@ jobs:
               if [ "$current" = "$reference" ]; then
                 echo "$p: MATCH ($current)"
               else
-                echo "$p: DIFFERENT (archive: $current; uploaded: $reference)"
+                echo "::error::$p differs from MIUI 14 reference (archive: $current; uploaded: $reference)"
+                exit 1
               fi
             done
           } | tee audit/REFERENCE_COMPARISON.txt
+          python3 scripts/yunluo/inspect_stock_boot.py extract/boot.img --output-config audit/stock-miui14-kconfig.txt --output-json audit/stock-boot.json
           rm -rf extract
       - uses: actions/upload-artifact@v4
         with:
