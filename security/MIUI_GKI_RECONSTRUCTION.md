@@ -32,3 +32,26 @@ A module's missing symbol in candidate `Module.symvers` may be provided by anoth
 5. Treat successful compilation and ABI checking as necessary, not sufficient: no automatically flashable MIUI boot package.
 
 **Current status:** stock firmware verified and source backport ledger started; a genuinely buildable MIUI-compatible 5.10.168 kernel has **not** been established yet.
+
+## Stock module ABI inventory — verified on 2026-10-29
+
+The first complete audit [Actions run 40899816068](https://github.com/hashyofficial/xiaomi-pad-yunluo-nAa-kernel/actions/runs/40899816068) completed successfully, with actual EROFS extraction and vendor-ramdisk decompression:
+
+| Origin | Stock `.ko` files |
+|---|---:|
+| Vendor ramdisk inside `vendor_boot.img` | **187** |
+| `vendor_dlkm.img` EROFS | **171** |
+| `odm_dlkm.img` EROFS | **0** |
+| **Total** | **358** |
+
+- Imported CRC records across modules: **18,860**.
+- Distinct symbols imported with recorded CRCs: **3,675**.
+- No candidate kernel has been compiled yet: **zero symbol comparisons were performed**. The absence of reported mismatches means **not tested**, *not* compatible.
+- Archive SHA-256 and all four core partition-image hashes passed.
+- Audit artifact includes `module-inventory.tsv`, `module-required-crcs.tsv`, `config-compatibility.json`, `stock-compatibility.json`, and stock kernel `.config` reference. Those inventory files have no proprietary kernel modules.
+
+## Next source-build checkpoint
+
+- `build.config.yunluo.miui14-gki-preview` explicitly uses **GKI** source configuration rather than the old `yunluo_defconfig` hardware-in-kernel configuration.
+- `.github/workflows/miui-gki-source-smoke.yml` compiles the existing 5.10.101 source's config, build preparation, and two patched objects using the runner's LLVM toolchain; it does **not** claim a stock 5.10.168 build, ABI compatibility, or a bootable kernel.
+- If compilation fails, record the actual errors and fix only source/toolchain issues supported by evidence. Do not rename the version or remove MIUI-required flags to force a green build.
