@@ -27,6 +27,15 @@ for function, field in cases:
         raise SystemExit(f"FAIL: missing or duplicated upstream fix in {function}")
     print(f"PASS: {function} writes -EAGAIN to {field} before returning")
 
+vsock = Path("net/vmw_vsock/af_vsock.c").read_text(encoding="utf-8")
+vsock_guard = (
+    "if (port == VMADDR_PORT_ANY ||\\n"
+    "\\t\\t\\t    port <= LAST_RESERVED_PORT)"
+)
+if vsock_guard.replace("\\\\n", "\\n").replace("\\\\t", "\\t") not in vsock:
+    raise SystemExit("FAIL: vsock wildcard port wraparound guard is missing")
+print("PASS: vsock autobind rejects VMADDR_PORT_ANY during port rollover")
+
 makefile = Path("Makefile").read_text(encoding="utf-8")
 parts = []
 for field in ("VERSION", "PATCHLEVEL", "SUBLEVEL"):

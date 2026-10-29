@@ -21,6 +21,14 @@ This repository contains Xiaomi's publicly released Linux **5.10.101** kernel so
 - **State:** Applied to source; compile, ABI and device tests are pending.
 - **Security interpretation:** This fix is present in a security-maintained upstream Android 5.10 branch. This single backport does **not** certify any Android Security Bulletin level or claim that every vulnerability is fixed.
 
+### Backport 002 — vsock autobind port rollover guard
+
+- **Upstream:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/67f157746ba7b3b824a12a1337593413f40cadcf
+- **File:** `net/vmw_vsock/af_vsock.c`
+- **Problem:** A generated autobind port can wrap to `VMADDR_PORT_ANY`, which must not be used as an assigned port.
+- **Change:** When generating a port, skip both `VMADDR_PORT_ANY` and the reserved range, as in the upstream one-condition fix.
+- **State:** Applied to source; static regression checked; compilation, KMI and device testing pending.
+
 ## Reviewed but deliberately NOT applied
 
 - **MediaTek CQDMA:** https://github.com/xiaomi-mt6789-devs/kernel_xiaomi-yunluo/commit/dab666be25dae4c9c5d0746a018e78b2c0d53e24 — the latest source's physical-channel locking model is different from the code in Xiaomi 5.10.101. The patch does not apply directly; examine prerequisites before adapting it.
