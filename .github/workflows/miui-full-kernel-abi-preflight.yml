@@ -29,16 +29,25 @@ jobs:
           sudo apt-get install -y make bc bison flex libssl-dev libelf-dev \
             binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu dwarves \
             p7zip-full kmod erofs-utils liblz4-1
+      - name: Restore cached pinned Android Clang 12.0.5 (avoid repeated large downloads)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/yunluo-android-clang
+          key: ${{ runner.os }}-yunluo-aosp-clang-r416183b-bd96dfe349c96268-v1
       - name: Install verified stock-matching Android Clang r416183b
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/yunluo-android-clang
-          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
-            'https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang-r416183b.tar.gz' \
-            --output /tmp/yunluo-clang-r416183b.tar.gz
-          test "$(wc -c < /tmp/yunluo-clang-r416183b.tar.gz)" -gt 1000000
-          tar -xzf /tmp/yunluo-clang-r416183b.tar.gz -C /tmp/yunluo-android-clang
+          if ! test -x /tmp/yunluo-android-clang/bin/clang; then
+            curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+              'https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang-r416183b.tar.gz' \
+              --output /tmp/yunluo-clang-r416183b.tar.gz
+            test "$(wc -c < /tmp/yunluo-clang-r416183b.tar.gz)" -gt 1000000
+            tar -xzf /tmp/yunluo-clang-r416183b.tar.gz -C /tmp/yunluo-android-clang
+          else
+            echo 'Reused pinned r416183b Clang toolchain from Actions cache.'
+          fi
           /tmp/yunluo-android-clang/bin/clang --version | grep -q 'clang version 12.0.5'
           echo '/tmp/yunluo-android-clang/bin' >> "$GITHUB_PATH"
       - name: Configure 5.10.101 GKI with full LTO and CFI required
@@ -173,6 +182,11 @@ jobs:
             | sha256sum -c
           fsck.erofs --extract="$PWD/extract/vendor-modules" extract/vendor_dlkm.img > report/vendor-erofs.log 2>&1
           fsck.erofs --extract="$PWD/extract/odm-modules" extract/odm_dlkm.img > report/odm-erofs.log 2>&1
+          # The single stock LEDs module has a gateic import which Xiaomi
+          # source declares weak. Inspect actual ELF binding before classifying
+          # it; do not move a MediaTek vendor driver into the generic GKI.
+          python3 scripts/yunluo/inspect_backlight_symbol.py \
+            --vendor-boot extract/vendor_boot.img --output report
           python3 scripts/yunluo/inspect_stock_boot.py extract/boot.img \
             --output-config report/stock-miui14-kconfig.txt --output-json report/stock-boot.json
           set +e
@@ -188,6 +202,14 @@ jobs:
           audit_rc=$?
           set -e
           tail -120 report/ABI_CONSOLE_OUTPUT.txt
+          # This source revision newly exports the existing page-pinner key.
+          # Compare against the real six stock module imports; a CRC mismatch
+          # is a hard stop in the Python audit, never an automatic workaround.
+          grep -q 'page_pinner_inited' out/vmlinux.symvers || {
+            echo '::error::Compiled GKI is missing page_pinner_inited export'
+            exit 1
+          }
+          grep -E 'page_pinner_inited' out/vmlinux.symvers | tee report/page-pinner-symbol-crc.txt
           if [ "$audit_rc" -ne 0 ]; then
             echo 'ABI BLOCKED: stock 5.10.168 vendor modules differ from candidate 5.10.101 exports.' | tee -a report/STATUS.txt
             echo 'These are expected findings from a historical baseline, not a boot-ready result.' | tee -a report/STATUS.txt
