@@ -142,11 +142,13 @@ jobs:
             exit "$build_rc"
           fi
           test -s out/vmlinux || { echo "::error::vmlinux was not linked"; exit 1; }
-          test -s out/Module.symvers || { echo "::error::Module.symvers was not generated"; exit 1; }
-          sha256sum out/Module.symvers > report/Module.symvers.sha256
-          wc -l out/Module.symvers | tee report/exported-symbols-count.txt
-          cp out/Module.symvers report/Module.symvers
-          echo 'Source-only kernel link completed. ABI comparison still required.' | tee -a report/STATUS.txt
+          # 'make vmlinux' generates vmlinux.symvers. Module.symvers is
+          # produced by the separate 'make modules' target and is not expected here.
+          test -s out/vmlinux.symvers || { echo "::error::vmlinux.symvers was not generated"; exit 1; }
+          sha256sum out/vmlinux.symvers > report/vmlinux.symvers.sha256
+          wc -l out/vmlinux.symvers | tee report/exported-symbols-count.txt
+          cp out/vmlinux.symvers report/vmlinux.symvers
+          echo 'PASS: vmlinux built; exported kernel CRCs available for stock-module ABI preflight.' | tee -a report/STATUS.txt
       - name: Compare real stock MIUI external module CRCs (expected baseline mismatch)
         shell: bash
         run: |
@@ -181,7 +183,7 @@ jobs:
             --stock-config report/stock-miui14-kconfig.txt \
             --source-gki-config arch/arm64/configs/gki_defconfig \
             --source-yunluo-config arch/arm64/configs/yunluo_defconfig \
-            --symvers out/Module.symvers \
+            --symvers out/vmlinux.symvers \
             --output report > report/ABI_CONSOLE_OUTPUT.txt 2>&1
           audit_rc=$?
           set -e
