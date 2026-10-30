@@ -12,6 +12,7 @@ on:
       - 'net/sched/sch_fifo.c'
       - 'drivers/media/usb/uvc/uvc_driver.c'
       - 'kernel/printk/printk.c'
+      - 'mm/page_pinner.c'
       - 'net/netfilter/ipvs/ip_vs_ctl.c'
       - 'net/batman-adv/network-coding.c'
       - '.github/workflows/miui-gki-source-smoke.yml'
@@ -38,15 +39,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y make bc bison flex libssl-dev libelf-dev binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
 
+      - name: Cache pinned AOSP Android Clang 12.0.5 toolchain
+        id: clang-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/yunluo-android-clang
+          key: ${{ runner.os }}-yunluo-aosp-clang-r416183b-bd96dfe349c96268-v1
+
       - name: Obtain original Android 12 Clang 12.0.5 (r416183b) from AOSP
         shell: bash
         run: |
           set -euo pipefail
           url='https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang-r416183b.tar.gz'
           mkdir -p /tmp/yunluo-android-clang
-          curl --fail --location --retry 3 --connect-timeout 30 --max-time 780 "$url" --output /tmp/yunluo-clang-r416183b.tar.gz
-          test "$(wc -c < /tmp/yunluo-clang-r416183b.tar.gz)" -gt 1000000
-          tar -xzf /tmp/yunluo-clang-r416183b.tar.gz -C /tmp/yunluo-android-clang
+          if ! test -x /tmp/yunluo-android-clang/bin/clang; then
+            curl --fail --location --retry 3 --connect-timeout 30 --max-time 780 "$url" --output /tmp/yunluo-clang-r416183b.tar.gz
+            test "$(wc -c < /tmp/yunluo-clang-r416183b.tar.gz)" -gt 1000000
+            tar -xzf /tmp/yunluo-clang-r416183b.tar.gz -C /tmp/yunluo-android-clang
+          else
+            echo 'Using cached pinned Android Clang r416183b.'
+          fi
           test -x /tmp/yunluo-android-clang/bin/clang
           test -x /tmp/yunluo-android-clang/bin/llvm-nm
           test -x /tmp/yunluo-android-clang/bin/llvm-ar
@@ -107,7 +119,16 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o net/sched/sch_fifo.o drivers/media/usb/uvc/uvc_driver.o kernel/printk/printk.o 2>&1 | tee report/patched-objects.log
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j2 fs/userfaultfd.o net/vmw_vsock/af_vsock.o net/sched/sch_fifo.o drivers/media/usb/uvc/uvc_driver.o kernel/printk/printk.o mm/page_pinner.o 2>&1 | tee report/patched-objects.log
+
+      - name: Check required page_pinner export is present in compiled GKI object
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fxq 'CONFIG_PAGE_PINNER=y' out/.config
+          llvm-nm -a out/mm/page_pinner.o > report/page-pinner-llvm-symbols.txt
+          grep -q '__ksymtab_page_pinner_inited' report/page-pinner-llvm-symbols.txt
+          echo 'PASS: compiled page_pinner.o contains the export; MIUI CRC compatibility still untested.'
 
       - name: Compile IPVS and BATMAN-adv in isolated optional Kconfig (not stock)
         shell: bash

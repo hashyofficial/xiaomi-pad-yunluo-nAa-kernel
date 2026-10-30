@@ -95,3 +95,13 @@ The `miui-source-audit.yml` workflow downloads the LFS object on a GitHub runner
 5. Build/test with compatible toolchain and external MediaTek modules, then validate on device with a stock rollback package.
 
 A green source/firmware audit is **not** evidence of a flash-ready kernel.
+
+### Backport 009 — GKI page_pinner static-key symbol export
+
+- **Upstream source:** [Android 12 GKI 5.10 page_pinner.c](https://android.googlesource.com/kernel/common/+/refs/heads/android12-5.10/mm/page_pinner.c). The original Xiaomi source already defines the same static key but lacks `EXPORT_SYMBOL(page_pinner_inited)`.
+- **File:** `mm/page_pinner.c`.
+- **Change:** Export the existing `page_pinner_inited` static key without changing the definition, configuration or runtime page-pinning logic.
+- **Stock evidence:** six previously unresolved import records from stock MIUI modules (required CRC `0xacfe4142`). This export may address their missing symbol; **no CRC agreement is claimed until the candidate is rebuilt and audited**.
+- **Validation:** source static check plus Android Clang 12.0.5 object build in CI; full module compatibility still pending.
+- **Separate unresolved symbol:** `mtk_drm_gateic_set_backlight`, required by `leds-mtk-disp.ko` (CRC `0x9f61238a`). It is **not** defined by this generic Xiaomi GKI source or the 358 extracted stock module exports. This is MediaTek display-specific and must be traced to verified vendor source/stock binary. No fabricated stub should be added.
+

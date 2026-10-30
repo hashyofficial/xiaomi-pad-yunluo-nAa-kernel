@@ -85,6 +85,13 @@ for check in ("coding_len + h_size > skb->len",
         raise SystemExit(f"FAIL: BATMAN-adv payload guard missing: {check}")
 print("PASS: BATMAN-adv both XOR source and destination length checked")
 
+# AOSP Android 12 5.10 exports this existing static key for stock vendor modules.
+pinner = Path("mm/page_pinner.c").read_text(encoding="utf-8")
+expected_pinner = "DEFINE_STATIC_KEY_FALSE(page_pinner_inited);\\nEXPORT_SYMBOL(page_pinner_inited);".replace("\\n", "\n")
+if pinner.count(expected_pinner) != 1:
+    raise SystemExit("FAIL: existing page_pinner_inited static key must be exported exactly once")
+print("PASS: page_pinner_inited exported for external modules; CRC still unverified")
+
 makefile = Path("Makefile").read_text(encoding="utf-8")
 parts = []
 for field in ("VERSION", "PATCHLEVEL", "SUBLEVEL"):
