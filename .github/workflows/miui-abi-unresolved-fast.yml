@@ -1,0 +1,69 @@
+name: MIUI stock vendor module unresolved export ownership (FAST, NONFLASHABLE)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/miui-abi-unresolved-fast.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  classify-stock-exports:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          persist-credentials: false
+      - name: Install stock ELF and EROFS readers (no Clang, no kernel build)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq binutils-aarch64-linux-gnu p7zip-full erofs-utils liblz4-1 git-lfs
+      - name: Reuse successful prior kernel CRC comparison diagnostics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p baseline report
+          gh run download 40980194801 -R "${GITHUB_REPOSITORY}" \
+            -n yunluo-kernel-full-build-and-stock-crc-preflight -D baseline
+          test -s baseline/module-required-crcs.tsv
+          test -s baseline/vmlinux.symvers
+          echo "Reused previous success run 40980194801 (no 30-minute Clang full-LTO rebuild)" | tee report/STATUS.txt
+      - name: Read original firmware modules and classify real ELF export ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs pull --include=archive.7z
+          pointer="$(git show HEAD:archive.7z)"
+          sha="$(printf '%s\n' "$pointer" | sed -n 's/^oid sha256://p')"
+          size="$(printf '%s\n' "$pointer" | sed -n 's/^size //p')"
+          test "$(wc -c < archive.7z)" -eq "$size"
+          printf '%s  %s\n' "$sha" archive.7z | sha256sum -c
+          mkdir -p extract/vendor-modules extract/odm-modules
+          7z x -y -oextract archive.7z vendor_boot.img vendor_dlkm.img odm_dlkm.img > report/stock-image-extract.log
+          printf '%s\n' 'd9724f2712fb81745c26519e430375bbc9c759ac6df056496a404ef8ee456950  extract/vendor_boot.img' | sha256sum -c
+          printf '%s\n' '41f4c4b443bbf10cb6522874738df8c3e3351ade8f2e20a06da71d171da83ce0  extract/vendor_dlkm.img' | sha256sum -c
+          printf '%s\n' '9de9cd73c9d6274f7aa21662a7a863a330abeeef279650155ce18d58cd6082c0  extract/odm_dlkm.img' | sha256sum -c
+          fsck.erofs --extract="$PWD/extract/vendor-modules" extract/vendor_dlkm.img > report/vendor-erofs.log 2>&1
+          fsck.erofs --extract="$PWD/extract/odm-modules" extract/odm_dlkm.img > report/odm-erofs.log 2>&1
+          python3 scripts/yunluo/classify_unresolved_exports.py \
+            --imports baseline/module-required-crcs.tsv \
+            --vendor-boot extract/vendor_boot.img \
+            --vendor-dlkm extract/vendor-modules \
+            --odm-dlkm extract/odm-modules \
+            --output report
+          echo 'No firmware or modules modified; classification does not attest CRC compatibility' >> report/STATUS.txt
+      - name: Upload ownership diagnostics only
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: yunluo-unresolved-module-ownership-nonflashable
+          path: report/
+          if-no-files-found: warn
+          retention-days: 7
